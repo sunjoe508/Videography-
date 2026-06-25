@@ -1,0 +1,17 @@
+# Environment / secrets — NEVER commit these
+.env
+.env.local
+.env.*.local
+
+# Supabase CLI
+.supabase/
+
+# macOS
+.DS_Store
+
+# Editor
+.vscode/
+.idea/
+
+# Node (if you add any build tools later)
+node_modules/
