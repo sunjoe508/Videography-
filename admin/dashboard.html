@@ -1,0 +1,212 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Admin Dashboard – Lens & Frame</title>
+  <link rel="stylesheet" href="../css/styles.css">
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <style>
+    .admin-layout { display: flex; min-height: 100vh; }
+    .sidebar {
+      width: 220px; background: var(--ink); color: #fff;
+      padding: 28px 0; display: flex; flex-direction: column; flex-shrink: 0;
+      position: sticky; top: 0; height: 100vh; overflow-y: auto;
+    }
+    .sidebar-brand { font-family: var(--font-serif); font-size: 1.2rem; padding: 0 20px 28px; border-bottom: 1px solid rgba(255,255,255,0.1); }
+    .sidebar-brand em { color: var(--accent); font-style: italic; }
+    .sidebar-nav { padding: 20px 12px; display: flex; flex-direction: column; gap: 4px; flex: 1; }
+    .sidebar-nav a {
+      display: flex; align-items: center; gap: 10px;
+      padding: 10px 12px; border-radius: 8px; color: rgba(255,255,255,0.65);
+      font-size: 0.875rem; font-weight: 500; text-decoration: none; transition: all 0.15s;
+    }
+    .sidebar-nav a:hover, .sidebar-nav a.active { background: rgba(255,255,255,0.1); color: #fff; }
+    .sidebar-footer { padding: 16px 20px; border-top: 1px solid rgba(255,255,255,0.1); }
+    .sidebar-footer a { color: rgba(255,255,255,0.5); font-size: 0.8rem; text-decoration: none; }
+
+    .main { flex: 1; padding: 40px; overflow-y: auto; }
+    @media(max-width:700px){ .sidebar { display:none; } .main { padding: 24px 5%; } }
+
+    .stats-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px,1fr)); gap: 20px; margin-bottom: 40px; }
+    .stat-card { background: var(--surface); border-radius: var(--radius); padding: 24px; border: 1px solid var(--border); }
+    .stat-label { font-size: 0.75rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em; color: var(--ink-muted); margin-bottom: 8px; }
+    .stat-value { font-family: var(--font-serif); font-size: 2rem; color: var(--ink); }
+    .stat-sub { font-size: 0.8rem; color: var(--ink-muted); margin-top: 4px; }
+
+    .section-title { font-size: 1.1rem; font-weight: 700; margin-bottom: 16px; display: flex; justify-content: space-between; align-items: center; }
+    .filter-row { display: flex; gap: 10px; margin-bottom: 16px; flex-wrap: wrap; }
+    .filter-btn { padding: 6px 14px; border-radius: 20px; font-size: 0.8rem; font-weight: 600; border: 1.5px solid var(--border); background: transparent; color: var(--ink-muted); cursor: pointer; transition: all 0.15s; }
+    .filter-btn.active { background: var(--ink); border-color: var(--ink); color: #fff; }
+
+    .action-btn { padding: 5px 12px; border-radius: 6px; font-size: 0.75rem; font-weight: 600; cursor: pointer; border: 1.5px solid var(--border); background: transparent; transition: all 0.15s; }
+    .action-btn:hover { background: var(--bg); }
+    .action-confirm { border-color: var(--success); color: var(--success); }
+    .action-confirm:hover { background: #D1FAE5; }
+    .action-cancel { border-color: var(--danger); color: var(--danger); }
+    .action-cancel:hover { background: #FEE2E2; }
+  </style>
+</head>
+<body>
+<div class="admin-layout">
+  <!-- Sidebar -->
+  <div class="sidebar">
+    <div class="sidebar-brand">Lens<em>&</em>Frame<br><span style="font-size:0.7rem;font-family:var(--font-sans);color:rgba(255,255,255,0.4);font-weight:400;">Admin Panel</span></div>
+    <nav class="sidebar-nav">
+      <a href="dashboard.html" class="active">📊 Dashboard</a>
+      <a href="bookings.html">📅 Bookings</a>
+      <a href="clients.html">👥 Clients</a>
+      <a href="../index.html">🌐 View site</a>
+    </nav>
+    <div class="sidebar-footer">
+      <a href="../pages/login.html" onclick="event.preventDefault();window.__signOut()">Sign out</a>
+    </div>
+  </div>
+
+  <!-- Main -->
+  <div class="main">
+    <div style="margin-bottom:32px;">
+      <h2 style="margin-bottom:4px;">Dashboard</h2>
+      <p id="dateLabel" style="font-size:0.875rem;"></p>
+    </div>
+
+    <!-- Stats -->
+    <div class="stats-grid" id="statsGrid">
+      <div class="stat-card"><div class="stat-label">Total bookings</div><div class="stat-value" id="stat-total">–</div></div>
+      <div class="stat-card"><div class="stat-label">Pending</div><div class="stat-value" id="stat-pending">–</div></div>
+      <div class="stat-card"><div class="stat-label">Confirmed</div><div class="stat-value" id="stat-confirmed">–</div></div>
+      <div class="stat-card"><div class="stat-label">Revenue (deposits)</div><div class="stat-value" id="stat-revenue">–</div></div>
+    </div>
+
+    <!-- Bookings table -->
+    <div class="card">
+      <div style="padding:20px 20px 0;">
+        <div class="section-title">
+          Recent bookings
+          <a href="bookings.html" style="font-size:0.8rem;color:var(--accent);">View all →</a>
+        </div>
+        <div class="filter-row" id="filterRow">
+          <button class="filter-btn active" data-status="all">All</button>
+          <button class="filter-btn" data-status="pending">Pending</button>
+          <button class="filter-btn" data-status="confirmed">Confirmed</button>
+          <button class="filter-btn" data-status="cancelled">Cancelled</button>
+        </div>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Client</th>
+              <th>Service</th>
+              <th>Date</th>
+              <th>Location</th>
+              <th>Deposit</th>
+              <th>Status</th>
+              <th>Actions</th>
+            </tr>
+          </thead>
+          <tbody id="bookingsBody">
+            <tr><td colspan="7" style="text-align:center;padding:32px;color:var(--ink-muted);">Loading…</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script type="module">
+  import sb from '../js/supabase.js';
+  import { requireAdmin, signOut, toast, formatDate, formatCurrency } from '../js/utils.js';
+
+  window.__signOut = signOut;
+  document.getElementById('dateLabel').textContent = new Date().toLocaleDateString('en-US', { weekday:'long', year:'numeric', month:'long', day:'numeric' });
+
+  const user = await requireAdmin('../pages/login.html');
+  if (!user) throw new Error('Not admin');
+
+  let allBookings = [];
+  let currentFilter = 'all';
+
+  async function loadDashboard() {
+    const { data, error } = await sb
+      .from('bookings')
+      .select('*, profiles(full_name, email)')
+      .order('created_at', { ascending: false })
+      .limit(50);
+
+    if (error) { toast('Error loading bookings', 'error'); return; }
+    allBookings = data || [];
+
+    // Stats
+    const total    = allBookings.length;
+    const pending  = allBookings.filter(b => b.status === 'pending').length;
+    const confirmed= allBookings.filter(b => b.status === 'confirmed').length;
+    const revenue  = allBookings.filter(b => b.payment_status === 'deposit_paid').reduce((s, b) => s + (b.deposit_amount || 0), 0);
+
+    document.getElementById('stat-total').textContent     = total;
+    document.getElementById('stat-pending').textContent   = pending;
+    document.getElementById('stat-confirmed').textContent = confirmed;
+    document.getElementById('stat-revenue').textContent   = formatCurrency(revenue);
+
+    renderTable();
+  }
+
+  function renderTable() {
+    const filtered = currentFilter === 'all' ? allBookings : allBookings.filter(b => b.status === currentFilter);
+    const tbody = document.getElementById('bookingsBody');
+    if (!filtered.length) {
+      tbody.innerHTML = `<tr><td colspan="7" style="text-align:center;padding:32px;color:var(--ink-muted);">No bookings found.</td></tr>`;
+      return;
+    }
+
+    tbody.innerHTML = filtered.map(b => `
+      <tr>
+        <td>
+          <div style="font-weight:600;font-size:0.875rem;">${b.client_name || b.profiles?.full_name || '—'}</div>
+          <div style="font-size:0.75rem;color:var(--ink-muted);">${b.profiles?.email || ''}</div>
+        </td>
+        <td style="font-size:0.875rem;">${b.service_name}</td>
+        <td style="font-size:0.875rem;">${formatDate(b.event_date)}</td>
+        <td style="font-size:0.875rem;max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${b.location}</td>
+        <td style="font-weight:600;font-size:0.875rem;">${formatCurrency(b.deposit_amount || 0)}</td>
+        <td><span class="badge badge-${b.status}">${b.status}</span></td>
+        <td>
+          <div style="display:flex;gap:6px;flex-wrap:wrap;">
+            ${b.status === 'pending' ? `
+              <button class="action-btn action-confirm" data-id="${b.id}" data-action="confirm">Confirm</button>
+              <button class="action-btn action-cancel" data-id="${b.id}" data-action="cancel">Cancel</button>
+            ` : b.status === 'confirmed' ? `
+              <button class="action-btn action-cancel" data-id="${b.id}" data-action="cancel">Cancel</button>
+            ` : '—'}
+          </div>
+        </td>
+      </tr>
+    `).join('');
+
+    // Action buttons
+    document.querySelectorAll('.action-btn[data-action]').forEach(btn => {
+      btn.addEventListener('click', async () => {
+        const id     = btn.dataset.id;
+        const action = btn.dataset.action;
+        const status = action === 'confirm' ? 'confirmed' : 'cancelled';
+        const { error } = await sb.from('bookings').update({ status }).eq('id', id);
+        if (error) { toast('Update failed', 'error'); return; }
+        toast(`Booking ${status}.`, 'success');
+        loadDashboard();
+      });
+    });
+  }
+
+  // Filter buttons
+  document.getElementById('filterRow').addEventListener('click', (e) => {
+    if (!e.target.classList.contains('filter-btn')) return;
+    document.querySelectorAll('.filter-btn').forEach(b => b.classList.remove('active'));
+    e.target.classList.add('active');
+    currentFilter = e.target.dataset.status;
+    renderTable();
+  });
+
+  loadDashboard();
+</script>
+</body>
+</html>
