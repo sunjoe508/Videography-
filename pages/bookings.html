@@ -1,0 +1,153 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>My Bookings – Lens & Frame</title>
+  <link rel="stylesheet" href="../css/styles.css">
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <style>
+    .page-header { padding: 48px 5% 0; max-width: 1100px; margin: 0 auto; }
+    .bookings-wrap { max-width: 1100px; margin: 0 auto; padding: 32px 5% 80px; }
+    .booking-card {
+      background: var(--surface); border-radius: var(--radius); border: 1px solid var(--border);
+      padding: 24px; display: grid;
+      grid-template-columns: auto 1fr auto; gap: 20px; align-items: center;
+      transition: box-shadow 0.2s;
+    }
+    .booking-card:hover { box-shadow: var(--shadow-md); }
+    .booking-icon { font-size: 2.2rem; }
+    .booking-title { font-weight: 700; font-size: 1rem; margin-bottom: 4px; }
+    .booking-meta { font-size: 0.8rem; color: var(--ink-muted); display: flex; flex-wrap: wrap; gap: 12px; margin-top: 6px; }
+    .booking-meta span { display: flex; align-items: center; gap: 4px; }
+    .booking-actions { display: flex; flex-direction: column; gap: 8px; align-items: flex-end; }
+    .booking-price { font-weight: 700; font-size: 1rem; }
+    @media(max-width:600px){
+      .booking-card { grid-template-columns: 1fr; }
+      .booking-actions { flex-direction: row; align-items: center; }
+    }
+  </style>
+</head>
+<body>
+<nav class="navbar">
+  <a href="../index.html" class="nav-brand">Lens<em>&</em>Frame</a>
+  <div class="nav-links">
+    <a href="book.html" class="btn btn-accent btn-sm">+ New booking</a>
+    <div id="nav-right"></div>
+  </div>
+</nav>
+
+<div class="page-header">
+  <h2 style="margin-bottom:4px;">My bookings</h2>
+  <p>Track and manage all your photography & videography sessions.</p>
+</div>
+
+<div class="bookings-wrap">
+  <div id="bookings-list" style="display:flex;flex-direction:column;gap:16px;margin-top:28px;">
+    <div style="text-align:center;padding:40px;color:var(--ink-muted);">
+      <span class="spinner" style="border-color:rgba(0,0,0,0.15);border-top-color:var(--ink);"></span>
+    </div>
+  </div>
+</div>
+
+<!-- Cancel modal -->
+<div class="modal-overlay hidden" id="cancelModal">
+  <div class="modal">
+    <div class="modal-header">
+      <h3>Cancel booking</h3>
+      <button class="modal-close" id="closeModal">✕</button>
+    </div>
+    <p>Are you sure you want to cancel this booking? Cancellation policy applies and deposits are non-refundable.</p>
+    <div style="display:flex;gap:12px;margin-top:24px;">
+      <button class="btn btn-outline" style="flex:1" id="cancelNo">Keep booking</button>
+      <button class="btn btn-danger" style="flex:1" id="cancelYes">Yes, cancel</button>
+    </div>
+  </div>
+</div>
+
+<script type="module">
+  import sb from '../js/supabase.js';
+  import { requireAuth, renderNav, toast, formatDate, formatCurrency } from '../js/utils.js';
+
+  renderNav();
+  const user = await requireAuth('../pages/login.html');
+  if (!user) throw new Error('Not authenticated');
+
+  const SERVICE_ICONS = {
+    wedding:'💍', cinematic:'🎬', brand:'🏢', event:'🎉', portrait:'🧑‍🎨', drone:'🚁'
+  };
+
+  let cancelTargetId = null;
+
+  async function loadBookings() {
+    const { data, error } = await sb
+      .from('bookings')
+      .select('*')
+      .eq('user_id', user.id)
+      .order('created_at', { ascending: false });
+
+    const list = document.getElementById('bookings-list');
+
+    if (error || !data || data.length === 0) {
+      list.innerHTML = `
+        <div class="empty-state">
+          <div class="icon">📷</div>
+          <h3>No bookings yet</h3>
+          <p>Book your first photography or videography session.</p>
+          <a href="book.html" class="btn btn-primary" style="margin-top:16px;">Book a session</a>
+        </div>`;
+      return;
+    }
+
+    list.innerHTML = data.map(b => `
+      <div class="booking-card">
+        <div class="booking-icon">${SERVICE_ICONS[b.service_id] || '📷'}</div>
+        <div>
+          <div class="booking-title">${b.service_name}</div>
+          <div style="margin-top:4px;">
+            <span class="badge badge-${b.status}">${b.status}</span>
+            <span class="badge badge-${b.payment_status === 'deposit_paid' ? 'paid' : 'pending'}" style="margin-left:6px;">${b.payment_status === 'deposit_paid' ? 'Deposit paid' : 'Payment pending'}</span>
+          </div>
+          <div class="booking-meta">
+            <span>📅 ${formatDate(b.event_date)}</span>
+            <span>⏰ ${b.event_time}</span>
+            <span>📍 ${b.location}</span>
+          </div>
+        </div>
+        <div class="booking-actions">
+          <div class="booking-price">${formatCurrency(b.deposit_amount)}</div>
+          <div style="font-size:0.75rem;color:var(--ink-muted)">deposit</div>
+          ${b.status !== 'cancelled' ? `
+            <button class="btn btn-ghost btn-sm cancel-btn" data-id="${b.id}">Cancel</button>
+          ` : ''}
+        </div>
+      </div>
+    `).join('');
+
+    document.querySelectorAll('.cancel-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        cancelTargetId = btn.dataset.id;
+        document.getElementById('cancelModal').classList.remove('hidden');
+      });
+    });
+  }
+
+  document.getElementById('closeModal').addEventListener('click', () => {
+    document.getElementById('cancelModal').classList.add('hidden');
+  });
+  document.getElementById('cancelNo').addEventListener('click', () => {
+    document.getElementById('cancelModal').classList.add('hidden');
+  });
+  document.getElementById('cancelYes').addEventListener('click', async () => {
+    if (!cancelTargetId) return;
+    const { error } = await sb.from('bookings').update({ status: 'cancelled' }).eq('id', cancelTargetId).eq('user_id', user.id);
+    if (error) { toast('Could not cancel. Please try again.', 'error'); return; }
+    toast('Booking cancelled.', 'success');
+    document.getElementById('cancelModal').classList.add('hidden');
+    loadBookings();
+  });
+
+  loadBookings();
+</script>
+</body>
+</html>
